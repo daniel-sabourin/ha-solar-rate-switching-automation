@@ -5,21 +5,16 @@ import type { Config } from "../src/config.js";
 const config: Config = {
   haUrl: "http://homeassistant.local:8123",
   haToken: "test-token",
-  importSensor: "sensor.energy_import",
-  exportSensor: "sensor.energy_export",
+  netSensor: "sensor.daily_net_production",
 };
 
 const startTime = new Date("2026-03-20T00:00:00.000Z");
 const endTime = new Date("2026-03-22T00:00:00.000Z");
 
 const mockResponse = {
-  "sensor.energy_import": [
-    { start: "2026-03-20T00:00:00+00:00", end: "2026-03-21T00:00:00+00:00", change: 24.1 },
-    { start: "2026-03-21T00:00:00+00:00", end: "2026-03-22T00:00:00+00:00", change: 22.8 },
-  ],
-  "sensor.energy_export": [
-    { start: "2026-03-20T00:00:00+00:00", end: "2026-03-21T00:00:00+00:00", change: 12.3 },
-    { start: "2026-03-21T00:00:00+00:00", end: "2026-03-22T00:00:00+00:00", change: 15.4 },
+  "sensor.daily_net_production": [
+    { start: "2026-03-20T00:00:00+00:00", end: "2026-03-21T00:00:00+00:00", change: 11.8 },
+    { start: "2026-03-21T00:00:00+00:00", end: "2026-03-22T00:00:00+00:00", change: -7.4 },
   ],
 };
 
@@ -44,8 +39,7 @@ describe("fetchDailyStats", () => {
     expect(init.headers.Authorization).toBe("Bearer test-token");
 
     const body = JSON.parse(init.body);
-    expect(body.statistic_ids).toContain("sensor.energy_import");
-    expect(body.statistic_ids).toContain("sensor.energy_export");
+    expect(body.statistic_ids).toEqual(["sensor.daily_net_production"]);
     expect(body.period).toBe("day");
     expect(body.types).toContain("change");
   });
@@ -54,26 +48,21 @@ describe("fetchDailyStats", () => {
     const result = await fetchDailyStats(config, startTime, endTime);
 
     expect(result).toHaveLength(2);
-    expect(result[0]).toEqual({ date: "2026-03-20", import: 24.1, export: 12.3 });
-    expect(result[1]).toEqual({ date: "2026-03-21", import: 22.8, export: 15.4 });
+    expect(result[0]).toEqual({ date: "2026-03-20", net: 11.8 });
+    expect(result[1]).toEqual({ date: "2026-03-21", net: -7.4 });
   });
 
-  it("fills missing export days with 0", async () => {
+  it("returns empty array when sensor has no data", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({
-          "sensor.energy_import": [
-            { start: "2026-03-20T00:00:00+00:00", end: "2026-03-21T00:00:00+00:00", change: 10 },
-          ],
-          "sensor.energy_export": [],
-        }),
+        json: async () => ({}),
       })
     );
 
     const result = await fetchDailyStats(config, startTime, endTime);
-    expect(result[0].export).toBe(0);
+    expect(result).toEqual([]);
   });
 
   it("throws on non-ok response", async () => {

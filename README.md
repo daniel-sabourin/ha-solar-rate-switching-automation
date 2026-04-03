@@ -29,11 +29,10 @@ Create a `.env` file or export these in your shell:
 ```sh
 HA_URL=http://homeassistant.local:8123
 HA_TOKEN=your_long_lived_access_token
-HA_IMPORT_SENSOR=sensor.sense_daily_grid_usage   # adjust to your entity ID
-HA_EXPORT_SENSOR=sensor.sense_daily_grid_exported
+HA_NET_SENSOR=sensor.daily_net_production   # adjust to your entity ID
 ```
 
-You can find your entity IDs in Home Assistant under **Settings → Devices & Services → Entities** (search for your Sense integration).
+The net sensor should be an entity that resets to 0 at midnight, increases as you export, and decreases as you import — i.e. daily net production (export − import). You can find your entity ID in Home Assistant under **Settings → Devices & Services → Entities** (search for your Sense integration).
 
 ## Usage
 

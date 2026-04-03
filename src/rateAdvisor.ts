@@ -1,66 +1,87 @@
-import type { DailyStat, AdvisorOptions, AdvisorResult } from "./types.js";
+import type { DailyStat, AdvisorOptions, AdvisorResult, BackdateRecommendation } from "./types.js";
 
-function sum(days: DailyStat[], field: "import" | "export"): number {
-  return days.reduce((acc, d) => acc + d[field], 0);
+function sumNet(days: DailyStat[]): number {
+  return days.reduce((acc, d) => acc + d.net, 0);
 }
 
-function exportImportRatio(days: DailyStat[]): number {
-  const imp = sum(days, "import");
-  return imp === 0 ? 0 : sum(days, "export") / imp;
+/**
+ * Scans backward from the last day to find the start date that maximizes
+ * cumulative net in the direction of the target plan.
+ * EV charging spikes (single high-import days) are absorbed into the total —
+ * only the overall cumulative sum determines the optimal date.
+ */
+function findOptimalBackdate(
+  days: DailyStat[],
+  switchTo: "high" | "low",
+  rateDiff: number
+): BackdateRecommendation | null {
+  if (days.length === 0) return null;
+
+  // high → want max positive net; low → want max negative net (flip sign)
+  const sign = switchTo === "high" ? 1 : -1;
+
+  let bestSum = 0; // must exceed 0 to be worth backdating
+  let bestDate: string | null = null;
+  let runningSum = 0;
+
+  for (let i = days.length - 1; i >= 0; i--) {
+    runningSum += sign * days[i].net;
+    if (runningSum > bestSum) {
+      bestSum = runningSum;
+      bestDate = days[i].date;
+    }
+  }
+
+  if (!bestDate) return null;
+
+  return { date: bestDate, savings: bestSum * rateDiff };
 }
 
 export function computeAdvisorResult(
-  days: DailyStat[],
+  allDays: DailyStat[],
   opts: AdvisorOptions
 ): AdvisorResult {
-  const totalImport = sum(days, "import");
-  const totalExport = sum(days, "export");
-  const net = totalImport - totalExport;
+  // Rolling window uses only the last N days
+  const windowDays = allDays.slice(-opts.days);
 
-  // net < 0 → exporter → high rate better
-  // net > 0 → importer → low rate better
-  const betterPlan: "high" | "low" = net < 0 ? "high" : "low";
+  const totalNet = sumNet(windowDays);
+
+  // totalNet > 0 → net exporter → high rate better
+  // totalNet < 0 → net importer → low rate better
+  const betterPlan: "high" | "low" = totalNet > 0 ? "high" : "low";
   const recommendation: "SWITCH" | "STAY" =
     betterPlan === opts.currentPlan ? "STAY" : "SWITCH";
   const switchTo = recommendation === "SWITCH" ? betterPlan : null;
 
   const rateDiff = opts.hiRate - opts.loRate;
-  const costOfWrongPlan = Math.abs(net) * rateDiff;
+  const costOfWrongPlan = Math.abs(totalNet) * rateDiff;
 
-  // Trend: only if we have at least 14 days
   let trend: AdvisorResult["trend"] = null;
-  if (days.length >= 14) {
-    const mid = Math.floor(days.length / 2);
-    const prior = days.slice(0, mid);
-    const recent = days.slice(mid);
+  if (windowDays.length >= 2) {
+    const mid = Math.floor(windowDays.length / 2);
     trend = {
-      priorRatio: exportImportRatio(prior),
-      recentRatio: exportImportRatio(recent),
-    };
-  } else if (days.length >= 2) {
-    const mid = Math.floor(days.length / 2);
-    const prior = days.slice(0, mid);
-    const recent = days.slice(mid);
-    trend = {
-      priorRatio: exportImportRatio(prior),
-      recentRatio: exportImportRatio(recent),
+      priorNet: sumNet(windowDays.slice(0, mid)),
+      recentNet: sumNet(windowDays.slice(mid)),
     };
   }
 
-  const windowStart = days[0]?.date ?? "";
-  const windowEnd = days[days.length - 1]?.date ?? "";
+  // Backdate: scan all days since bill date (may extend before the rolling window)
+  let backdate: BackdateRecommendation | null = null;
+  if (opts.billDate && switchTo) {
+    const billDays = allDays.filter((d) => d.date >= opts.billDate!);
+    backdate = findOptimalBackdate(billDays, switchTo, rateDiff);
+  }
 
   return {
-    windowStart,
-    windowEnd,
-    days,
-    totalImport,
-    totalExport,
-    net,
+    windowStart: windowDays[0]?.date ?? "",
+    windowEnd: windowDays[windowDays.length - 1]?.date ?? "",
+    days: windowDays,
+    totalNet,
     recommendation,
     switchTo,
     costOfWrongPlan,
     trend,
+    backdate,
   };
 }
 
@@ -68,9 +89,9 @@ function fmt(n: number, decimals = 1): string {
   return n.toFixed(decimals);
 }
 
-function arrow(prior: number, recent: number): string {
-  if (recent > prior + 0.01) return "↑ (improving)";
-  if (recent < prior - 0.01) return "↓ (worsening)";
+function trendArrow(prior: number, recent: number): string {
+  if (recent > prior + 0.1) return "↑ (improving)";
+  if (recent < prior - 0.1) return "↓ (worsening)";
   return "→ (stable)";
 }
 
@@ -85,10 +106,9 @@ export function formatResult(result: AdvisorResult, opts: AdvisorOptions): strin
   lines.push(`Current plan: ${opts.currentPlan.toUpperCase()}`);
   lines.push("");
 
-  const netLabel = result.net <= 0 ? "net exporter" : "net importer";
-  lines.push(`  Imported:  ${fmt(result.totalImport)} kWh`);
-  lines.push(`  Exported:  ${fmt(result.totalExport)} kWh`);
-  lines.push(`  Net:       ${fmt(result.net)} kWh (${netLabel})`);
+  const netLabel = result.totalNet >= 0 ? "net exporter" : "net importer";
+  const sign = result.totalNet >= 0 ? "+" : "";
+  lines.push(`  Net production:  ${sign}${fmt(result.totalNet)} kWh (${netLabel})`);
   lines.push("");
 
   if (result.recommendation === "STAY") {
@@ -99,43 +119,44 @@ export function formatResult(result: AdvisorResult, opts: AdvisorOptions): strin
         : "imports must exceed exports to benefit from low rate";
     lines.push(`  (${reason})`);
   } else {
-    lines.push(
-      `Recommendation: SWITCH to ${result.switchTo!.toUpperCase()}`
-    );
+    lines.push(`Recommendation: SWITCH to ${result.switchTo!.toUpperCase()}`);
   }
   lines.push("");
 
   const rateDiff = opts.hiRate - opts.loRate;
+  const wrongPlan = opts.currentPlan === "high" ? "LOW" : "HIGH";
   lines.push(
     `Cost of being on wrong plan: ~$${fmt(result.costOfWrongPlan, 2)} over this window`
   );
   lines.push(
-    `  (if you switched to ${
-      opts.currentPlan === "high" ? "LOW" : "HIGH"
-    }, you'd pay ${fmt(rateDiff * 100, 0)}c/kWh × ${fmt(Math.abs(result.net))} kWh more)`
+    `  (if you switched to ${wrongPlan}, you'd pay ${fmt(rateDiff * 100, 0)}c/kWh × ${fmt(Math.abs(result.totalNet))} kWh more)`
   );
 
   if (result.trend) {
-    const { priorRatio, recentRatio } = result.trend;
-    const dir = arrow(priorRatio, recentRatio);
+    const { priorNet, recentNet } = result.trend;
+    const priorSign = priorNet >= 0 ? "+" : "";
+    const recentSign = recentNet >= 0 ? "+" : "";
+    const dir = trendArrow(priorNet, recentNet);
     lines.push("");
     lines.push(
-      `Trend (last 7d vs prior 7d): E/I ratio  ${fmt(priorRatio, 2)} → ${fmt(
-        recentRatio,
-        2
-      )}  ${dir}`
+      `Trend (first half vs second half): net  ${priorSign}${fmt(priorNet)} → ${recentSign}${fmt(recentNet)} kWh  ${dir}`
+    );
+  }
+
+  if (result.backdate) {
+    lines.push("");
+    lines.push(`Optimal backdate: ${result.backdate.date}`);
+    lines.push(
+      `  Savings vs switching today: ~$${fmt(result.backdate.savings, 2)}`
     );
   }
 
   lines.push("");
   lines.push("Daily breakdown:");
-  lines.push("  Date        Import   Export   Net");
+  lines.push("  Date          Net");
   for (const d of result.days) {
-    const net = d.export - d.import;
-    const sign = net >= 0 ? "+" : "";
-    lines.push(
-      `  ${d.date}  ${fmt(d.import).padStart(6)}   ${fmt(d.export).padStart(6)}   ${(sign + fmt(net)).padStart(6)}`
-    );
+    const s = d.net >= 0 ? "+" : "";
+    lines.push(`  ${d.date}  ${(s + fmt(d.net)).padStart(8)}`);
   }
 
   return lines.join("\n");

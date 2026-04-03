@@ -32,29 +32,39 @@ async function runAdvisor(args: string[]): Promise<void> {
   const daysRaw = getFlag(args, "--days") ?? "14";
   const hiRateRaw = getFlag(args, "--hi-rate") ?? "0.35";
   const loRateRaw = getFlag(args, "--lo-rate") ?? "0.10";
+  const billDate = getFlag(args, "--bill-date");
 
   const opts: AdvisorOptions = {
     currentPlan: currentPlanRaw,
     days: parseInt(daysRaw, 10),
     hiRate: parseFloat(hiRateRaw),
     loRate: parseFloat(loRateRaw),
+    billDate,
   };
 
   const config = loadConfig();
 
   const endTime = new Date();
   endTime.setHours(0, 0, 0, 0); // start of today — exclude today (incomplete)
-  const startTime = new Date(endTime);
-  startTime.setDate(startTime.getDate() - opts.days);
 
-  const days = await fetchDailyStats(config, startTime, endTime);
+  const windowStart = new Date(endTime);
+  windowStart.setDate(windowStart.getDate() - opts.days);
 
-  if (days.length === 0) {
+  // If bill date is earlier than the window start, fetch from there so the
+  // backdate algorithm has the full bill period to scan.
+  const fetchStart =
+    billDate && new Date(billDate) < windowStart
+      ? new Date(billDate)
+      : windowStart;
+
+  const allDays = await fetchDailyStats(config, fetchStart, endTime);
+
+  if (allDays.length === 0) {
     console.error("No data returned from Home Assistant for the requested window.");
     process.exit(1);
   }
 
-  const result = computeAdvisorResult(days, opts);
+  const result = computeAdvisorResult(allDays, opts);
   console.log(formatResult(result, opts));
 }
 
@@ -65,7 +75,9 @@ async function main(): Promise<void> {
     await runAdvisor(args);
   } else {
     console.error(`Unknown subcommand: "${subcommand}"`);
-    console.error("Usage: npm start -- advisor --current-plan <high|low> [--days <n>]");
+    console.error(
+      "Usage: npm start -- advisor --current-plan <high|low> [--days <n>] [--bill-date <YYYY-MM-DD>]"
+    );
     process.exit(1);
   }
 }
