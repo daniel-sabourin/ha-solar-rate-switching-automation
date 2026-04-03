@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { loadConfig } from "./config.js";
 import { fetchDailyStats } from "./ha.js";
 import { computeAdvisorResult, formatResult } from "./rateAdvisor.js";
