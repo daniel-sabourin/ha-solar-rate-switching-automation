@@ -157,14 +157,25 @@ export function formatResult(result: AdvisorResult, opts: AdvisorOptions): strin
     );
   }
 
+  // Precompute suffix sums: cumulative[i] = sum of net from day i to end
+  const cumulative: number[] = new Array(result.days.length);
+  let running = 0;
+  for (let i = result.days.length - 1; i >= 0; i--) {
+    running += result.days[i].net;
+    cumulative[i] = running;
+  }
+
   lines.push("");
   lines.push("Daily breakdown:");
-  lines.push("  Date          Net");
-  for (const d of result.days) {
-    const s = d.net >= 0 ? "+" : "";
-    const netStr = (s + fmt(d.net)).padStart(8);
-    const row = `  ${d.date}  ${d.net >= 0 ? c.green(netStr) : c.red(netStr)}`;
-    lines.push(row);
+  lines.push("  Date          Net     From here");
+  for (let i = 0; i < result.days.length; i++) {
+    const d = result.days[i];
+    const cum = cumulative[i];
+    const netStr = ((d.net >= 0 ? "+" : "") + fmt(d.net)).padStart(8);
+    const cumStr = ((cum >= 0 ? "+" : "") + fmt(cum)).padStart(9);
+    const coloredNet = d.net >= 0 ? c.green(netStr) : c.red(netStr);
+    const coloredCum = cum >= 0 ? c.green(cumStr) : c.red(cumStr);
+    lines.push(`  ${d.date}  ${coloredNet}  ${coloredCum}`);
   }
 
   lines.push("");
