@@ -24,7 +24,7 @@ function toWsUrl(haUrl: string): string {
 /**
  * Fetches daily net production stats via HA's WebSocket statistics API
  * (recorder/statistics_during_period). This gives exact daily totals as
- * computed by HA's recorder, matching what Sense reports in its own app.
+ * computed by HA's recorder.
  */
 export async function fetchDailyStats(
   config: Config,

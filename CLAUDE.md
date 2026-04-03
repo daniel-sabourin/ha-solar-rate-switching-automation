@@ -4,11 +4,11 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 ## Project
 
-**sense-automations** — TypeScript CLI that queries Home Assistant's statistics API (which aggregates Sense Home Energy Monitor data) to help determine the optimal time to switch electricity rate plans.
+**ha-rate-advisor** — TypeScript CLI that queries Home Assistant's WebSocket statistics API to help determine the optimal time to switch electricity rate plans. Tested with a Sense Home Energy Monitor but works with any HA energy sensor that tracks daily net production.
 
 ## Repository
 
-- GitHub: `daniel-sabourin/sense-automations`
+- GitHub: `daniel-sabourin/ha-solar-rate-switching-automation`
 - Branch: `main`
 
 ## Commands
@@ -19,7 +19,7 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 ## Background: The Rate-Switching Problem
 
-The user has solar panels and a Sense Home Energy Monitor integrated into Home Assistant. Their electricity plan has two modes — both the import and export rate are always tied together (symmetrical):
+The user has solar panels and a net energy production sensor in Home Assistant (tested with a Sense Home Energy Monitor). Their electricity plan has two modes — both the import and export rate are always tied together (symmetrical):
 
 - **High rate**: 35c/kWh for both imports AND exports
 - **Low rate**: 8c/kWh for both imports AND exports
@@ -70,7 +70,7 @@ Content-Type: application/json
 
 Response: `Record<sensor_id, Array<{ start: string, end: string, change: number }>>` — daily delta kWh values.
 
-Sense entity IDs vary by installation — they are configured via env vars (`HA_IMPORT_SENSOR`, `HA_EXPORT_SENSOR`).
+Entity IDs vary by installation and energy monitor — configured via env var (`HA_NET_SENSOR`).
 
 ### Rolling Window
 

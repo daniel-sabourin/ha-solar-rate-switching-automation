@@ -1,7 +1,7 @@
 {
-  "name": "sense-automations",
+  "name": "ha-solar-rate-switching-automation",
   "version": "1.0.0",
-  "description": "CLI tools for Sense Home Energy Monitor via Home Assistant",
+  "description": "CLI tool for determining the optimal time to switch electricity rate plans using Home Assistant energy data",
   "type": "module",
   "scripts": {
     "start": "tsx src/index.ts",

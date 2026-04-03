@@ -1,12 +1,12 @@
-# sense-automations
+# ha-solar-rate-switching-automation
 
-TypeScript CLI for Sense Home Energy Monitor via Home Assistant. Helps determine the optimal time to switch electricity rate plans based on rolling solar export/import data.
+TypeScript CLI for determining the optimal time to switch electricity rate plans, using net energy production data from Home Assistant. Tested with a Sense Home Energy Monitor, but works with any HA energy sensor that tracks daily net production.
 
 ## Background
 
 This tool is for a setup where:
 
-- A **Sense Home Energy Monitor** feeds data into **Home Assistant**
+- A **Home Assistant** instance tracks daily net energy production (e.g. via a Sense Home Energy Monitor or any other energy monitor integration)
 - The electricity plan has two symmetrical rate tiers (import and export rates are always equal):
   - **High rate**: 35¢/kWh import and export
   - **Low rate**: 8¢/kWh import and export
@@ -32,9 +32,9 @@ HA_TOKEN=your_long_lived_access_token
 HA_NET_SENSOR=sensor.daily_net_production   # adjust to your entity ID
 ```
 
-The net sensor should be an entity that resets to 0 at midnight, increases as you export, and decreases as you import — i.e. daily net production (export − import). You can find your entity ID in Home Assistant under **Settings → Devices & Services → Entities** (search for your Sense integration).
+The net sensor must be a HA entity with `state_class: total` that resets to 0 at midnight, increases as you export, and decreases as you import — i.e. daily net production (export − import). You can find your entity ID in Home Assistant under **Settings → Devices & Services → Entities**.
 
-The tool uses HA's WebSocket statistics API, so `HA_URL` should be the base URL of your HA instance (the WebSocket connection is derived automatically).
+The tool connects via HA's WebSocket statistics API, so `HA_URL` should be the base HTTP URL of your HA instance (the WebSocket URL is derived automatically).
 
 ## Usage
 
@@ -84,9 +84,9 @@ Daily breakdown:
 Recommendation: STAY on LOW
 ```
 
-The **Net** column is the day's net production (green = net exporter, red = net importer). The **From here** column shows the cumulative net from that day to the end of the window — this is what the backdate algorithm maximises when `--bill-date` is provided.
+The **Net** column is the day's net production (green = net exporter, red = net importer). The **From here** column shows the cumulative net from that day to the end of the window — this is what the backdate algorithm maximises when `--earliest-switch-date` is provided.
 
-When a switch is recommended with `--bill-date` set, the output also includes:
+When a switch is recommended with `--earliest-switch-date` set, the output also includes:
 
 ```
 Optimal backdate: 2026-03-18
