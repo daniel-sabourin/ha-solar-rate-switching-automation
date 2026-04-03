@@ -90,7 +90,7 @@ describe("computeAdvisorResult", () => {
 });
 
 describe("backdate recommendation", () => {
-  it("is null when no billDate provided", () => {
+  it("is null when no earliestSwitchDate provided", () => {
     const days = makeDays(14, 10);
     const result = computeAdvisorResult(days, { ...baseOpts, currentPlan: "low" });
     expect(result.backdate).toBeNull();
@@ -101,7 +101,7 @@ describe("backdate recommendation", () => {
     const result = computeAdvisorResult(days, {
       ...baseOpts,
       currentPlan: "low",
-      billDate: "2026-03-01",
+      earliestSwitchDate: "2026-03-01",
     });
     expect(result.backdate).toBeNull();
   });
@@ -120,7 +120,7 @@ describe("backdate recommendation", () => {
       ...baseOpts,
       currentPlan: "low",
       days: 3, // window = [03-03, 03-04, 03-05], net = +33 → SWITCH to high
-      billDate: "2026-03-01",
+      earliestSwitchDate: "2026-03-01",
     });
     expect(result.backdate).not.toBeNull();
     expect(result.backdate!.date).toBe("2026-03-03");
@@ -141,7 +141,7 @@ describe("backdate recommendation", () => {
       ...baseOpts,
       currentPlan: "low",
       days: 5,
-      billDate: "2026-03-01",
+      earliestSwitchDate: "2026-03-01",
     });
     expect(result.backdate).not.toBeNull();
     // Optimal is 2026-03-04 (38 kWh) since EV charge on 03-03 makes 02 less optimal
@@ -162,7 +162,7 @@ describe("backdate recommendation", () => {
       ...baseOpts,
       currentPlan: "high",
       days: 3, // window = [03-03, 03-04, 03-05], net = -33 → SWITCH to low
-      billDate: "2026-03-01",
+      earliestSwitchDate: "2026-03-01",
     });
     expect(result.backdate).not.toBeNull();
     expect(result.backdate!.date).toBe("2026-03-03");
@@ -176,7 +176,7 @@ describe("backdate recommendation", () => {
       { date: "2026-03-02", net: -10 },
     ];
     // This won't recommend SWITCH to high since net is negative, so backdate is null anyway
-    // Test the case where billDate days are all unfavorable:
+    // Test the case where earliestSwitchDate days are all unfavorable:
     const allExportDays = makeDays(14, 10); // exporter → SWITCH to high
     // But add a bill-period override with only import days
     const importOnly: DailyStat[] = [
@@ -188,13 +188,13 @@ describe("backdate recommendation", () => {
       ...baseOpts,
       currentPlan: "low",
       days: 14,
-      billDate: "2026-03-15", // bill date is after all the export days
+      earliestSwitchDate: "2026-03-15", // bill date is after all the export days
     });
     // days after 2026-03-15 in importOnly: days 3..16 → net 10 each → cumulative positive → backdate found
     expect(result.backdate).not.toBeNull();
   });
 
-  it("respects billDate — does not look before it", () => {
+  it("respects earliestSwitchDate — does not look before it", () => {
     const days: DailyStat[] = [
       { date: "2026-03-01", net: 50 }, // before bill date — should be ignored
       { date: "2026-03-10", net: 10 },
@@ -204,7 +204,7 @@ describe("backdate recommendation", () => {
       ...baseOpts,
       currentPlan: "low",
       days: 3,
-      billDate: "2026-03-10",
+      earliestSwitchDate: "2026-03-10",
     });
     expect(result.backdate).not.toBeNull();
     expect(result.backdate!.date).toBe("2026-03-10");
@@ -264,7 +264,7 @@ describe("formatResult", () => {
       { date: "2026-03-05", net: 11 },
     ];
     // Window = last 3 days (net +33) → SWITCH to high; bill covers all 5
-    const opts = { ...baseOpts, currentPlan: "low" as const, days: 3, billDate: "2026-03-01" };
+    const opts = { ...baseOpts, currentPlan: "low" as const, days: 3, earliestSwitchDate: "2026-03-01" };
     const result = computeAdvisorResult(days, opts);
     const output = formatResult(result, opts);
     expect(output).toContain("Optimal backdate:");

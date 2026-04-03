@@ -50,12 +50,12 @@ npm start -- advisor --current-plan <high|low> [options]
 | `--days` | `30` | Trailing window in days (30 ≈ one billing cycle) |
 | `--hi-rate` | `0.35` | High plan rate in $/kWh |
 | `--lo-rate` | `0.08` | Low plan rate in $/kWh |
-| `--bill-date` | *(none)* | Earliest date eligible for backdating (YYYY-MM-DD) |
+| `--earliest-switch-date` | *(none)* | Earliest date you can switch rates (YYYY-MM-DD). Bounds both the window and the backdate scan — data before this date is excluded. |
 
 ### Example
 
 ```sh
-npm start -- advisor --current-plan low --bill-date 2026-03-15
+npm start -- advisor --current-plan low --earliest-switch-date 2026-03-15
 ```
 
 ```

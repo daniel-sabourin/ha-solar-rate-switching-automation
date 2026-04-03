@@ -8,7 +8,7 @@ export interface AdvisorOptions {
   days: number;
   hiRate: number;
   loRate: number;
-  billDate?: string; // YYYY-MM-DD — earliest date eligible for backdating
+  earliestSwitchDate?: string; // YYYY-MM-DD — bounds both the window and backdate scan
 }
 
 export interface BackdateRecommendation {

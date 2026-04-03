@@ -33,14 +33,14 @@ async function runAdvisor(args: string[]): Promise<void> {
   const daysRaw = getFlag(args, "--days") ?? "30";
   const hiRateRaw = getFlag(args, "--hi-rate") ?? "0.35";
   const loRateRaw = getFlag(args, "--lo-rate") ?? "0.08";
-  const billDate = getFlag(args, "--bill-date");
+  const earliestSwitchDate = getFlag(args, "--earliest-switch-date");
 
   const opts: AdvisorOptions = {
     currentPlan: currentPlanRaw,
     days: parseInt(daysRaw, 10),
     hiRate: parseFloat(hiRateRaw),
     loRate: parseFloat(loRateRaw),
-    billDate,
+    earliestSwitchDate,
   };
 
   const config = loadConfig();
@@ -51,11 +51,13 @@ async function runAdvisor(args: string[]): Promise<void> {
   const windowStart = new Date(endTime);
   windowStart.setDate(windowStart.getDate() - opts.days);
 
-  // If bill date is earlier than the window start, fetch from there so the
-  // backdate algorithm has the full bill period to scan.
+  // If earliestSwitchDate is more recent than the window start, bound the
+  // window to it — data before that date isn't relevant to the current decision.
+  // Parse as local midnight (appending T00:00:00 without Z) so it aligns with
+  // windowStart and endTime, which are also computed in local time via setHours().
   const fetchStart =
-    billDate && new Date(billDate) < windowStart
-      ? new Date(billDate)
+    earliestSwitchDate && new Date(earliestSwitchDate + "T00:00:00") > windowStart
+      ? new Date(earliestSwitchDate + "T00:00:00")
       : windowStart;
 
   // Subtract 1ms so the stats API (which uses inclusive end_time) does not
@@ -81,7 +83,7 @@ async function main(): Promise<void> {
   } else {
     console.error(`Unknown subcommand: "${subcommand}"`);
     console.error(
-      "Usage: npm start -- advisor --current-plan <high|low> [--days <n>] [--bill-date <YYYY-MM-DD>]"
+      "Usage: npm start -- advisor --current-plan <high|low> [--days <n>] [--earliest-switch-date <YYYY-MM-DD>]"
     );
     process.exit(1);
   }

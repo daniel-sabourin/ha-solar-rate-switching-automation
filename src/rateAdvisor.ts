@@ -67,8 +67,8 @@ export function computeAdvisorResult(
 
   // Backdate: scan all days since bill date (may extend before the rolling window)
   let backdate: BackdateRecommendation | null = null;
-  if (opts.billDate && switchTo) {
-    const billDays = allDays.filter((d) => d.date >= opts.billDate!);
+  if (opts.earliestSwitchDate && switchTo) {
+    const billDays = allDays.filter((d) => d.date >= opts.earliestSwitchDate!);
     backdate = findOptimalBackdate(billDays, switchTo, rateDiff);
   }
 
