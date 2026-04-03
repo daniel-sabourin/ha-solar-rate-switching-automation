@@ -30,9 +30,9 @@ async function runAdvisor(args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const daysRaw = getFlag(args, "--days") ?? "14";
+  const daysRaw = getFlag(args, "--days") ?? "30";
   const hiRateRaw = getFlag(args, "--hi-rate") ?? "0.35";
-  const loRateRaw = getFlag(args, "--lo-rate") ?? "0.10";
+  const loRateRaw = getFlag(args, "--lo-rate") ?? "0.08";
   const billDate = getFlag(args, "--bill-date");
 
   const opts: AdvisorOptions = {

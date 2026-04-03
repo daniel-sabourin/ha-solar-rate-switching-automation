@@ -45,9 +45,9 @@ npm start -- advisor --current-plan <high|low> [options]
 | Flag | Default | Description |
 |---|---|---|
 | `--current-plan` | *(required)* | Which plan you're currently on: `high` or `low` |
-| `--days` | `14` | Trailing window in days |
+| `--days` | `30` | Trailing window in days |
 | `--hi-rate` | `0.35` | High plan rate in $/kWh |
-| `--lo-rate` | `0.10` | Low plan rate in $/kWh |
+| `--lo-rate` | `0.08` | Low plan rate in $/kWh |
 
 ### Example
 

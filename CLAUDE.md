@@ -22,7 +22,7 @@ This file provides guidance to Claude Code when working with code in this reposi
 The user has solar panels and a Sense Home Energy Monitor integrated into Home Assistant. Their electricity plan has two modes — both the import and export rate are always tied together (symmetrical):
 
 - **High rate**: 35c/kWh for both imports AND exports
-- **Low rate**: 10c/kWh for both imports AND exports
+- **Low rate**: 8c/kWh for both imports AND exports
 
 They manually switch rates twice a year:
 - **Spring → high rate**: when solar exports are consistently exceeding grid consumption
@@ -39,7 +39,7 @@ Because import and export rates are always equal to each other on any given plan
 The actual rate values (35c vs 10c) don't affect the *decision*, only the *dollar impact* of being on the wrong plan:
 
 ```
-cost_of_wrong_plan = |exports - imports| × (0.35 - 0.10)
+cost_of_wrong_plan = |exports - imports| × (0.35 - 0.08)
 ```
 
 ## Architecture
@@ -74,7 +74,7 @@ Sense entity IDs vary by installation — they are configured via env vars (`HA_
 
 ### Rolling Window
 
-- Default: **14 days** (two full week cycles — removes weekday/weekend consumption bias)
+- Default: **30 days** (matches a typical billing cycle)
 - Configurable via `--days` flag
 - Also show trend: last 7d vs prior 7d within the window
 
