@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { fetchDailyStats } from "../src/ha.js";
 import type { Config } from "../src/config.js";
 
@@ -8,116 +8,158 @@ const config: Config = {
   netSensor: "sensor.daily_net_production",
 };
 
-// startTime / endTime aligned to UTC-6 local midnight (06:00 UTC)
-const startTime = new Date("2026-03-20T06:00:00.000Z"); // local midnight March 20
-const endTime = new Date("2026-03-22T06:00:00.000Z");   // local midnight March 22
+const startTime = new Date("2026-03-20T06:00:00.000Z");
+const endTime = new Date("2026-04-03T06:00:00.000Z");
 
-// last_reset at 06:00 UTC → local midnight is UTC-6
-const LAST_RESET = "2026-03-19T06:00:00+00:00";
+// --- WebSocket mock ---
 
-function makePoint(stateVal: string, utcTime: string, includeAttributes = false) {
-  return {
-    state: stateVal,
-    last_changed: utcTime,
-    ...(includeAttributes ? { attributes: { last_reset: LAST_RESET } } : {}),
-  };
+let mockResultMessages: object[] = [];
+let lastWsUrl = "";
+let lastWsSendCalls: string[] = [];
+
+class MockWebSocket {
+  private listeners: Record<string, ((e: object) => void)[]> = {};
+
+  constructor(url: string) {
+    lastWsUrl = url;
+    lastWsSendCalls = [];
+    // Defer so addEventListener calls happen first
+    queueMicrotask(() => this.emit("message", { data: JSON.stringify({ type: "auth_required" }) }));
+  }
+
+  addEventListener(event: string, fn: (e: object) => void) {
+    this.listeners[event] ??= [];
+    this.listeners[event].push(fn);
+  }
+
+  send(data: string) {
+    lastWsSendCalls.push(data);
+    const msg = JSON.parse(data) as { type: string };
+
+    if (msg.type === "auth") {
+      this.emit("message", { data: JSON.stringify({ type: "auth_ok" }) });
+      return;
+    }
+
+    for (const m of mockResultMessages) {
+      this.emit("message", { data: JSON.stringify(m) });
+    }
+  }
+
+  close() {}
+
+  private emit(event: string, payload: object) {
+    for (const fn of this.listeners[event] ?? []) fn(payload);
+  }
 }
 
-// Two local days of readings. Each local day runs from 06:00 UTC to 05:59 UTC.
-// March 20 local: last reading is 11.8 at 05:55 UTC March 21
-// March 21 local: last reading is -7.4 at 05:55 UTC March 22
-const mockResponse = [[
-  // March 20 local (06:00 UTC March 20 → 05:59 UTC March 21)
-  makePoint("0.0",  "2026-03-20T06:00:00+00:00", true), // reset, has attributes
-  makePoint("5.2",  "2026-03-20T12:00:00+00:00"),
-  makePoint("11.8", "2026-03-21T05:55:00+00:00"),        // last reading of March 20 local
-  // March 21 local (06:00 UTC March 21 → 05:59 UTC March 22)
-  makePoint("0.0",  "2026-03-21T06:00:00+00:00"),        // reset
-  makePoint("-3.1", "2026-03-21T12:00:00+00:00"),
-  makePoint("-7.4", "2026-03-22T05:55:00+00:00"),        // last reading of March 21 local
-]];
-
 beforeEach(() => {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => mockResponse,
-    })
-  );
+  mockResultMessages = [
+    {
+      id: 1,
+      type: "result",
+      success: true,
+      result: {
+        "sensor.daily_net_production": [
+          { start: "2026-03-20T06:00:00+00:00", end: "2026-03-21T06:00:00+00:00", change: 11.8 },
+          { start: "2026-03-21T06:00:00+00:00", end: "2026-03-22T06:00:00+00:00", change: -7.2 },
+        ],
+      },
+    },
+  ];
+  vi.stubGlobal("WebSocket", MockWebSocket);
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("fetchDailyStats", () => {
-  it("calls the history API with correct URL and auth", async () => {
+  it("connects to the WebSocket API with the correct URL", async () => {
     await fetchDailyStats(config, startTime, endTime);
-
-    expect(fetch).toHaveBeenCalledOnce();
-    const [url, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(url).toContain("/api/history/period/");
-    expect(url).toContain("filter_entity_id=sensor.daily_net_production");
-    expect(url).toContain(`end_time=${endTime.toISOString()}`);
-    expect(init.headers.Authorization).toBe("Bearer test-token");
+    expect(lastWsUrl).toBe("ws://homeassistant.local:8123/api/websocket");
   });
 
-  it("returns one DailyStat per local day with the last reading of that day", async () => {
-    const result = await fetchDailyStats(config, startTime, endTime);
+  it("uses wss:// when haUrl starts with https://", async () => {
+    const httpsConfig = { ...config, haUrl: "https://homeassistant.local" };
+    await fetchDailyStats(httpsConfig, startTime, endTime);
+    expect(lastWsUrl).toBe("wss://homeassistant.local/api/websocket");
+  });
 
+  it("sends auth token after auth_required", async () => {
+    await fetchDailyStats(config, startTime, endTime);
+    const authMsg = lastWsSendCalls.map((d) => JSON.parse(d) as { type: string }).find((m) => m.type === "auth");
+    expect(authMsg).toMatchObject({ type: "auth", access_token: "test-token" });
+  });
+
+  it("sends statistics command with correct parameters", async () => {
+    await fetchDailyStats(config, startTime, endTime);
+    const statsMsg = lastWsSendCalls
+      .map((d) => JSON.parse(d) as { type: string })
+      .find((m) => m.type === "recorder/statistics_during_period");
+    expect(statsMsg).toMatchObject({
+      statistic_ids: ["sensor.daily_net_production"],
+      period: "day",
+      types: ["change"],
+      start_time: startTime.toISOString(),
+      end_time: endTime.toISOString(),
+    });
+  });
+
+  it("maps result to DailyStat array with correct dates and net values", async () => {
+    const result = await fetchDailyStats(config, startTime, endTime);
     expect(result).toHaveLength(2);
     expect(result[0]).toEqual({ date: "2026-03-20", net: 11.8 });
-    expect(result[1]).toEqual({ date: "2026-03-21", net: -7.4 });
+    expect(result[1]).toEqual({ date: "2026-03-21", net: -7.2 });
   });
 
-  it("uses last_reset UTC hour to determine local date boundaries", async () => {
-    // If last_reset is at 05:00 UTC (UTC-5 timezone), dates shift by one hour
-    const utcMinus5Response = [[
-      { state: "0.0", last_changed: "2026-03-20T05:00:00+00:00", attributes: { last_reset: "2026-03-19T05:00:00+00:00" } },
-      makePoint("8.5",  "2026-03-21T04:55:00+00:00"),
-    ]];
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => utcMinus5Response }));
-
+  it("derives local date from timestamps with UTC offset", async () => {
+    // UTC+5:30 (IST): local midnight = 18:30 UTC of the previous day
+    mockResultMessages = [{
+      id: 1, type: "result", success: true,
+      result: {
+        "sensor.daily_net_production": [
+          { start: "2026-03-30T18:30:00+05:30", end: "2026-03-31T18:30:00+05:30", change: 5.5 },
+        ],
+      },
+    }];
     const result = await fetchDailyStats(config, startTime, endTime);
-    // 04:55 UTC March 21 = 23:55 local (UTC-5) March 20 → still March 20
-    expect(result[0].date).toBe("2026-03-20");
-    expect(result[0].net).toBe(8.5);
+    // +05:30 offset: local midnight = 18:30 UTC March 30 → local date is March 30
+    expect(result[0].date).toBe("2026-03-30");
   });
 
-  it("returns empty array when sensor has no history", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => [[]] }));
-    const result = await fetchDailyStats(config, startTime, endTime);
-    expect(result).toEqual([]);
-  });
-
-  it("returns empty array when response is empty", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => [] }));
+  it("returns empty array when sensor has no data", async () => {
+    mockResultMessages = [{ id: 1, type: "result", success: true, result: {} }];
     const result = await fetchDailyStats(config, startTime, endTime);
     expect(result).toEqual([]);
   });
 
-  it("throws when last_reset attribute is missing", async () => {
-    const noResetResponse = [[
-      { state: "5.0", last_changed: "2026-03-20T10:00:00+00:00" }, // no attributes
-    ]];
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => noResetResponse }));
-
+  it("rejects on auth failure", async () => {
+    class AuthFailWs extends MockWebSocket {
+      send(data: string) {
+        const msg = JSON.parse(data) as { type: string };
+        if (msg.type === "auth") {
+          // @ts-expect-error accessing private emit via any
+          (this as unknown as { emit: (e: string, p: object) => void }).emit(
+            "message",
+            { data: JSON.stringify({ type: "auth_invalid" }) }
+          );
+        }
+      }
+    }
+    vi.stubGlobal("WebSocket", AuthFailWs);
     await expect(fetchDailyStats(config, startTime, endTime)).rejects.toThrow(
-      "missing last_reset attribute"
+      "HA authentication failed"
     );
   });
 
-  it("throws on non-ok response", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 401, statusText: "Unauthorized" }));
-    await expect(fetchDailyStats(config, startTime, endTime)).rejects.toThrow("HA API error: 401 Unauthorized");
-  });
-
-  it("skips non-numeric state values", async () => {
-    const withUnavailable = [[
-      { state: "0.0", last_changed: "2026-03-20T06:00:00+00:00", attributes: { last_reset: LAST_RESET } },
-      { state: "unavailable", last_changed: "2026-03-20T09:00:00+00:00" },
-      { state: "5.0", last_changed: "2026-03-20T12:00:00+00:00" },
-    ]];
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => withUnavailable }));
-
-    const result = await fetchDailyStats(config, startTime, endTime);
-    expect(result[0].net).toBe(5.0);
+  it("rejects when HA returns an error result", async () => {
+    mockResultMessages = [{
+      id: 1, type: "result", success: false,
+      error: { message: "Unknown statistic" },
+    }];
+    await expect(fetchDailyStats(config, startTime, endTime)).rejects.toThrow(
+      "Unknown statistic"
+    );
   });
 });

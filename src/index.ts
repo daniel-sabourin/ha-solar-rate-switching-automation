@@ -58,7 +58,11 @@ async function runAdvisor(args: string[]): Promise<void> {
       ? new Date(billDate)
       : windowStart;
 
-  const allDays = await fetchDailyStats(config, fetchStart, endTime);
+  // Subtract 1ms so the stats API (which uses inclusive end_time) does not
+  // return a partial period for the current day.
+  const fetchEnd = new Date(endTime.getTime() - 1);
+
+  const allDays = await fetchDailyStats(config, fetchStart, fetchEnd);
 
   if (allDays.length === 0) {
     console.error("No data returned from Home Assistant for the requested window.");
