@@ -85,6 +85,12 @@ export function computeAdvisorResult(
   };
 }
 
+const c = {
+  green:  (s: string) => `\x1b[32m${s}\x1b[0m`,
+  red:    (s: string) => `\x1b[31m${s}\x1b[0m`,
+  bold:   (s: string) => `\x1b[1m${s}\x1b[0m`,
+};
+
 function fmt(n: number, decimals = 1): string {
   return n.toFixed(decimals);
 }
@@ -156,7 +162,16 @@ export function formatResult(result: AdvisorResult, opts: AdvisorOptions): strin
   lines.push("  Date          Net");
   for (const d of result.days) {
     const s = d.net >= 0 ? "+" : "";
-    lines.push(`  ${d.date}  ${(s + fmt(d.net)).padStart(8)}`);
+    const netStr = (s + fmt(d.net)).padStart(8);
+    const row = `  ${d.date}  ${d.net >= 0 ? c.green(netStr) : c.red(netStr)}`;
+    lines.push(row);
+  }
+
+  lines.push("");
+  if (result.recommendation === "STAY") {
+    lines.push(c.bold(`Recommendation: STAY on ${opts.currentPlan.toUpperCase()}`));
+  } else {
+    lines.push(c.bold(`Recommendation: SWITCH to ${result.switchTo!.toUpperCase()}`));
   }
 
   return lines.join("\n");
