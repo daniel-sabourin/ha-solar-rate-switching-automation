@@ -8,7 +8,7 @@ from homeassistant.helpers.event import async_track_time_change
 from .const import DOMAIN
 from .coordinator import RateAdvisorCoordinator
 
-PLATFORMS = ["sensor"]
+PLATFORMS = ["button", "sensor"]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
