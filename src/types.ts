@@ -24,6 +24,7 @@ export interface AdvisorResult {
   recommendation: "SWITCH" | "STAY";
   switchTo: "high" | "low" | null;
   costOfWrongPlan: number;
+  windowOptimal: BackdateRecommendation | null; // best switch point within rolling window (set when recommendation=SWITCH)
   trend: {
     priorNet: number;  // net kWh for first half of window
     recentNet: number; // net kWh for second half of window

@@ -46,14 +46,17 @@ export function computeAdvisorResult(
 
   const totalNet = sumNet(windowDays);
 
-  // totalNet > 0 → net exporter → high rate better
-  // totalNet < 0 → net importer → low rate better
-  const betterPlan: "high" | "low" = totalNet > 0 ? "high" : "low";
-  const recommendation: "SWITCH" | "STAY" =
-    betterPlan === opts.currentPlan ? "STAY" : "SWITCH";
-  const switchTo = recommendation === "SWITCH" ? betterPlan : null;
-
   const rateDiff = opts.hiRate - opts.loRate;
+
+  // Determine if switching to the other plan would be beneficial from any point in the window.
+  // Using suffix-sum analysis (same logic as findOptimalBackdate) handles the case where the
+  // full window total is negative (net importer overall) but recent days have turned positive.
+  const otherPlan: "high" | "low" = opts.currentPlan === "high" ? "low" : "high";
+  const windowOptimal = findOptimalBackdate(windowDays, otherPlan, rateDiff);
+  const recommendation: "SWITCH" | "STAY" =
+    windowOptimal && windowOptimal.savings > 0 ? "SWITCH" : "STAY";
+  const switchTo: "high" | "low" | null = recommendation === "SWITCH" ? otherPlan : null;
+
   const costOfWrongPlan = Math.abs(totalNet) * rateDiff;
 
   let trend: AdvisorResult["trend"] = null;
@@ -80,6 +83,7 @@ export function computeAdvisorResult(
     recommendation,
     switchTo,
     costOfWrongPlan,
+    windowOptimal: recommendation === "SWITCH" ? windowOptimal : null,
     trend,
     backdate,
   };
@@ -130,13 +134,20 @@ export function formatResult(result: AdvisorResult, opts: AdvisorOptions): strin
   lines.push("");
 
   const rateDiff = opts.hiRate - opts.loRate;
-  const wrongPlan = opts.currentPlan === "high" ? "LOW" : "HIGH";
-  lines.push(
-    `Cost of being on wrong plan: ~$${fmt(result.costOfWrongPlan, 2)} over this window`
-  );
-  lines.push(
-    `  (if you switched to ${wrongPlan}, you'd pay ${fmt(rateDiff * 100, 0)}c/kWh × ${fmt(Math.abs(result.totalNet))} kWh more)`
-  );
+  if (result.recommendation === "SWITCH" && result.windowOptimal) {
+    const switchPlan = result.switchTo!.toUpperCase();
+    lines.push(
+      `Savings from switching to ${switchPlan} (from ${result.windowOptimal.date}): ~$${fmt(result.windowOptimal.savings, 2)}`
+    );
+  } else {
+    const wrongPlan = opts.currentPlan === "high" ? "LOW" : "HIGH";
+    lines.push(
+      `Cost of being on wrong plan: ~$${fmt(result.costOfWrongPlan, 2)} over this window`
+    );
+    lines.push(
+      `  (if you switched to ${wrongPlan}, you'd pay ${fmt(rateDiff * 100, 0)}c/kWh × ${fmt(Math.abs(result.totalNet))} kWh more)`
+    );
+  }
 
   if (result.trend) {
     const { priorNet, recentNet } = result.trend;
@@ -182,7 +193,9 @@ export function formatResult(result: AdvisorResult, opts: AdvisorOptions): strin
   if (result.recommendation === "STAY") {
     lines.push(c.bold(`Recommendation: STAY on ${opts.currentPlan.toUpperCase()}`));
   } else {
-    lines.push(c.bold(`Recommendation: SWITCH to ${result.switchTo!.toUpperCase()}`));
+    const dateHint = (result.backdate ?? result.windowOptimal)?.date;
+    const dateSuffix = dateHint ? ` (from ${dateHint})` : "";
+    lines.push(c.bold(`Recommendation: SWITCH to ${result.switchTo!.toUpperCase()}${dateSuffix}`));
   }
 
   return lines.join("\n");
