@@ -24,19 +24,21 @@ class AdvisorData:
     savings: float               # $ saved by being on recommended plan from optimal date
     window_net: float            # kWh net over the rolling window
     trend: str                   # "improving", "worsening", or "stable"
+    energy_since_switch: float   # kWh net from optimal_date to end of window (signed)
 
 
 def _find_optimal_backdate(
     days: list[dict[str, Any]], switch_to: str, rate_diff: float
-) -> tuple[str | None, float]:
+) -> tuple[str | None, float, float]:
     """Find the start date that maximises cumulative net in the direction of switch_to.
 
     Scans backwards from the most recent day, accumulating sign * net.
-    Returns (date, dollar_savings) for the start date that yields the highest sum.
-    Returns (None, 0.0) if no beneficial starting point exists.
+    Returns (date, dollar_savings, raw_kwh_sum) for the start date that yields the
+    highest sum. raw_kwh_sum is always positive (it is the directional optimum).
+    Returns (None, 0.0, 0.0) if no beneficial starting point exists.
     """
     if not days:
-        return None, 0.0
+        return None, 0.0, 0.0
 
     sign = 1.0 if switch_to == "high" else -1.0
     best_sum = 0.0
@@ -49,7 +51,7 @@ def _find_optimal_backdate(
             best_sum = running_sum
             best_date = day["date"]
 
-    return best_date, best_sum * rate_diff
+    return best_date, best_sum * rate_diff, best_sum
 
 
 def _compute_result(
@@ -65,8 +67,8 @@ def _compute_result(
 
     # Use suffix-sum analysis for both directions. The plan with the higher potential
     # savings from its optimal start date is the recommendation.
-    optimal_date_high, savings_high = _find_optimal_backdate(window, "high", rate_diff)
-    optimal_date_low, savings_low = _find_optimal_backdate(window, "low", rate_diff)
+    optimal_date_high, savings_high, raw_high = _find_optimal_backdate(window, "high", rate_diff)
+    optimal_date_low, savings_low, raw_low = _find_optimal_backdate(window, "low", rate_diff)
 
     # Pick the plan whose optimal starting date is most recent — a later optimal date
     # means that plan is currently winning. This correctly handles windows where one plan
@@ -75,22 +77,27 @@ def _compute_result(
         recommended_plan = "low"
         optimal_date = None
         savings = 0.0
+        energy_since_switch = 0.0
     elif optimal_date_high is None:
         recommended_plan = "low"
         optimal_date = optimal_date_low
         savings = savings_low
+        energy_since_switch = -raw_low   # negative: net importer over this period
     elif optimal_date_low is None:
         recommended_plan = "high"
         optimal_date = optimal_date_high
         savings = savings_high
+        energy_since_switch = raw_high   # positive: net exporter over this period
     elif optimal_date_high >= optimal_date_low:
         recommended_plan = "high"
         optimal_date = optimal_date_high
         savings = savings_high
+        energy_since_switch = raw_high
     else:
         recommended_plan = "low"
         optimal_date = optimal_date_low
         savings = savings_low
+        energy_since_switch = -raw_low
 
     # Trend: is net moving toward the recommended plan?
     mid = len(window) // 2
@@ -117,6 +124,7 @@ def _compute_result(
         savings=round(savings, 2),
         window_net=round(total_net, 1),
         trend=trend,
+        energy_since_switch=round(energy_since_switch, 1),
     )
 
 

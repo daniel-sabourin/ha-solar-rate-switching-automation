@@ -22,6 +22,7 @@ async def async_setup_entry(
         SavingsSensor(coordinator, entry),
         WindowNetSensor(coordinator, entry),
         TrendSensor(coordinator, entry),
+        EnergySinceSwitchSensor(coordinator, entry),
     ])
 
 
@@ -112,3 +113,18 @@ class TrendSensor(_BaseSensor):
     @property
     def native_value(self) -> str | None:
         return self._data.trend if self._data else None
+
+
+class EnergySinceSwitchSensor(_BaseSensor):
+    _attr_name = "Energy Since Switch Date"
+    _attr_native_unit_of_measurement = "kWh"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:solar-power"
+
+    @property
+    def unique_id(self) -> str:
+        return f"{self._entry.entry_id}_energy_since_switch"
+
+    @property
+    def native_value(self) -> float | None:
+        return self._data.energy_since_switch if self._data else None
