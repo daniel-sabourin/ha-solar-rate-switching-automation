@@ -1,0 +1,16 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Rate Advisor",
+        "description": "Configure your solar rate switching advisor.",
+        "data": {
+          "net_sensor": "Net production sensor",
+          "hi_rate": "High rate ($/kWh)",
+          "lo_rate": "Low rate ($/kWh)",
+          "days": "Rolling window (days)"
+        }
+      }
+    }
+  }
+}

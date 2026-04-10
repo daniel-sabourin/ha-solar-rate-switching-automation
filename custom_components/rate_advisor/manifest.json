@@ -1,0 +1,11 @@
+{
+  "domain": "rate_advisor",
+  "name": "Rate Advisor",
+  "version": "1.0.0",
+  "config_flow": true,
+  "dependencies": ["recorder"],
+  "codeowners": ["@daniel-sabourin"],
+  "requirements": [],
+  "iot_class": "local_polling",
+  "documentation": "https://github.com/daniel-sabourin/ha-solar-rate-switching-automation"
+}
