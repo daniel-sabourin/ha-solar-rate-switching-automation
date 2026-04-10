@@ -68,7 +68,22 @@ def _compute_result(
     optimal_date_high, savings_high = _find_optimal_backdate(window, "high", rate_diff)
     optimal_date_low, savings_low = _find_optimal_backdate(window, "low", rate_diff)
 
-    if savings_high >= savings_low:
+    # Pick the plan whose optimal starting date is most recent — a later optimal date
+    # means that plan is currently winning. This correctly handles windows where one plan
+    # dominates historically but the other has become better in recent days.
+    if optimal_date_high is None and optimal_date_low is None:
+        recommended_plan = "low"
+        optimal_date = None
+        savings = 0.0
+    elif optimal_date_high is None:
+        recommended_plan = "low"
+        optimal_date = optimal_date_low
+        savings = savings_low
+    elif optimal_date_low is None:
+        recommended_plan = "high"
+        optimal_date = optimal_date_high
+        savings = savings_high
+    elif optimal_date_high >= optimal_date_low:
         recommended_plan = "high"
         optimal_date = optimal_date_high
         savings = savings_high
