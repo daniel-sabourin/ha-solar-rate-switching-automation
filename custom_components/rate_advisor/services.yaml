@@ -1,0 +1,5 @@
+diagnose:
+  name: Diagnose
+  description: >
+    Sends a persistent notification with the full daily breakdown, suffix sums,
+    and recommendation details — equivalent to the CLI diagnostic printout.

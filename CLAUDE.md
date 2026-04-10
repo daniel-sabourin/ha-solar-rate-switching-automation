@@ -4,22 +4,16 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 ## Project
 
-**ha-rate-advisor** — TypeScript CLI that queries Home Assistant's WebSocket statistics API to help determine the optimal time to switch electricity rate plans. Tested with a Sense Home Energy Monitor but works with any HA energy sensor that tracks daily net production.
+**ha-rate-advisor** — Home Assistant custom integration (HACS) that analyses net solar energy production to recommend when to switch electricity rate plans. Reads daily statistics directly from the HA recorder. Tested with a Sense Home Energy Monitor but works with any HA energy sensor that tracks daily net production.
 
 ## Repository
 
 - GitHub: `daniel-sabourin/ha-solar-rate-switching-automation`
 - Branch: `main`
 
-## Commands
-
-- `npm start -- advisor [options]` — run the rate advisor
-- `npm test` — run tests (vitest)
-- `npm run test:watch` — run tests in watch mode
-
 ## Background: The Rate-Switching Problem
 
-The user has solar panels and a net energy production sensor in Home Assistant (tested with a Sense Home Energy Monitor). Their electricity plan has two modes — both the import and export rate are always tied together (symmetrical):
+The user has solar panels and a net energy production sensor in Home Assistant. Their electricity plan has two modes — both the import and export rate are always tied together (symmetrical):
 
 - **High rate**: 35c/kWh for both imports AND exports
 - **Low rate**: 8c/kWh for both imports AND exports
@@ -36,7 +30,7 @@ Because import and export rates are always equal to each other on any given plan
 - High rate is cheaper when `(imports - exports) < 0`, i.e. exports > imports
 - Low rate is cheaper when `(imports - exports) > 0`, i.e. imports > exports
 
-The actual rate values (35c vs 10c) don't affect the *decision*, only the *dollar impact* of being on the wrong plan:
+The actual rate values don't affect the *decision*, only the *dollar impact* of being on the wrong plan:
 
 ```
 cost_of_wrong_plan = |exports - imports| × (0.35 - 0.08)
@@ -44,90 +38,42 @@ cost_of_wrong_plan = |exports - imports| × (0.35 - 0.08)
 
 ## Architecture
 
-- `src/index.ts` — CLI entry point, dispatches sub-commands
-- `src/ha.ts` — Home Assistant statistics API client
-- `src/rateAdvisor.ts` — rolling window computation, recommendation logic, output formatting
-- `src/config.ts` — loads environment variables
-- `src/types.ts` — shared interfaces
+All integration code lives in `custom_components/rate_advisor/`:
+
+- `__init__.py` — integration setup/teardown, midnight refresh trigger, `rate_advisor.diagnose` service
+- `coordinator.py` — fetches HA recorder statistics, runs advisor logic, exposes `format_diagnostics()`
+- `sensor.py` — six sensor entity definitions
+- `config_flow.py` — UI configuration wizard
+- `const.py` — constants and defaults
+- `manifest.json` — HACS/HA integration metadata
+- `services.yaml` — service descriptions for Developer Tools UI
+- `strings.json` / `translations/en.json` — config flow UI strings
 
 ## Key Details
 
-### Data Source: Home Assistant Statistics API
+### Data Source
 
-```
-POST /api/statistics_during_period
-Authorization: Bearer <HA_TOKEN>
-Content-Type: application/json
+Uses `homeassistant.components.recorder.statistics.statistics_during_period` called via `async_add_executor_job`. Fetches `change` values for the net sensor over a `day` period. No external HTTP calls — reads directly from the HA recorder database.
 
-{
-  "start_time": "<ISO8601>",
-  "end_time": "<ISO8601>",
-  "statistic_ids": ["<HA_IMPORT_SENSOR>", "<HA_EXPORT_SENSOR>"],
-  "period": "day",
-  "types": ["change"]
-}
-```
+### Recommendation Algorithm
 
-Response: `Record<sensor_id, Array<{ start: string, end: string, change: number }>>` — daily delta kWh values.
+Uses suffix-sum analysis on the rolling window. Scans backwards from the most recent day to find the optimal starting date for each plan direction (high/low). Recommends the plan whose optimal starting date is most recent — a later date signals that plan is currently winning. This correctly handles spring/fall transitions where the full window net still favours the old plan but recent days have flipped.
 
-Entity IDs vary by installation and energy monitor — configured via env var (`HA_NET_SENSOR`).
+### Sensors
 
-### Rolling Window
+| Entity | Type | Notes |
+|---|---|---|
+| `sensor.rate_advisor_recommended_plan` | `str` | `"high"` or `"low"` |
+| `sensor.rate_advisor_optimal_switch_date` | `str` | YYYY-MM-DD |
+| `sensor.rate_advisor_savings` | `float` ($) | Dollar benefit from optimal date |
+| `sensor.rate_advisor_energy_since_switch_date` | `float` (kWh) | Signed net kWh from optimal date to window end |
+| `sensor.rate_advisor_window_net` | `float` (kWh) | Total net over rolling window |
+| `sensor.rate_advisor_trend` | `str` | `"improving"`, `"worsening"`, or `"stable"` |
 
-- Default: **30 days** (matches a typical billing cycle)
-- Configurable via `--days` flag
-- Also show trend: last 7d vs prior 7d within the window
+### Refresh Schedule
 
-### CLI Interface
+Refreshes at 00:05 daily via `async_track_time_change` (after midnight statistics finalise). Falls back to a 24-hour interval from last update.
 
-```
-npm start -- advisor [options]
+### Diagnose Service
 
-Options:
-  --current-plan <high|low>   Which plan you're currently on (required)
-  --days <n>                  Trailing window in days (default: 30)
-  --hi-rate <rate>            High plan rate in $/kWh (default: 0.35)
-  --lo-rate <rate>            Low plan rate in $/kWh (default: 0.08)
-```
-
-### Output Format
-
-```
-Rate Switch Advisor
-===================
-Window: 2026-03-11 → 2026-04-09  (30 days)
-Current plan: LOW
-
-  Net production:  -205.5 kWh (net importer)
-
-Recommendation: SWITCH to HIGH
-
-Savings from switching to HIGH (from 2026-04-09): ~$8.96
-
-Trend (first half vs second half): net  -103.8 → -101.7 kWh  ↑ (improving)
-
-Daily breakdown:
-  Date          Net     From here
-  2026-03-11   -32.7    -205.5
-  2026-03-12   -12.3    -172.8
-  ...
-  2026-04-09   +33.2     +33.2
-
-Recommendation: SWITCH to HIGH (from 2026-04-09)
-```
-
-When STAY is recommended:
-```
-Recommendation: STAY on LOW
-  (imports must exceed exports to benefit from low rate)
-
-Cost of being on wrong plan: ~$55.49 over this window
-  (if you switched to HIGH, you'd pay 27c/kWh × 205.5 kWh more)
-```
-
-### Testing
-
-Uses vitest. Follow the same pattern as `solar-automations`:
-- Mock `fetch` with `vi.stubGlobal` for HA client tests
-- Pure unit tests for advisor logic (no mocking needed — takes data directly)
-- Use `vi.hoisted()` for mock variables inside `vi.mock()` factories
+`rate_advisor.diagnose` creates a persistent HA notification with the full daily breakdown table including Net and From Here (suffix sum) columns — equivalent to what the old CLI printed. Call it from Developer Tools → Services.

@@ -143,6 +143,42 @@ class RateAdvisorCoordinator(DataUpdateCoordinator[AdvisorData]):
         self._hi_rate: float = float(entry.data[CONF_HI_RATE])
         self._lo_rate: float = float(entry.data[CONF_LO_RATE])
         self._days: int = int(entry.data[CONF_DAYS])
+        self.window_days: list[dict[str, Any]] = []
+
+    def format_diagnostics(self) -> str:
+        """Format a full diagnostic report for display as a persistent notification."""
+        data = self.data
+        if not data or not self.window_days:
+            return "No data available yet. Try reloading the integration."
+
+        days = self.window_days
+        window_start = days[0]["date"]
+        window_end = days[-1]["date"]
+
+        # Compute suffix sums ("from here" column)
+        suffix: list[float] = [0.0] * len(days)
+        running = 0.0
+        for i in range(len(days) - 1, -1, -1):
+            running += days[i]["net"]
+            suffix[i] = running
+
+        lines = [
+            f"**Window:** {window_start} → {window_end} ({len(days)} days)",
+            f"**Recommended:** {data.recommended_plan.upper()} from {data.optimal_date} (~${data.savings})",
+            f"**Trend:** {data.trend}",
+            f"**Window net:** {data.window_net:+.1f} kWh",
+            f"**Energy since switch date:** {data.energy_since_switch:+.1f} kWh",
+            "",
+            "```",
+            "Date          Net    From Here",
+        ]
+        for i, day in enumerate(days):
+            net_str = f"{day['net']:+.1f}".rjust(8)
+            cum_str = f"{suffix[i]:+.1f}".rjust(9)
+            lines.append(f"{day['date']}  {net_str}  {cum_str}")
+        lines.append("```")
+
+        return "\n".join(lines)
 
     async def _async_update_data(self) -> AdvisorData:
         end_time = dt_util.now()
@@ -194,4 +230,5 @@ class RateAdvisorCoordinator(DataUpdateCoordinator[AdvisorData]):
         if result is None:
             raise UpdateFailed("Insufficient statistics data to compute a recommendation.")
 
+        self.window_days = all_days[-self._days:]
         return result

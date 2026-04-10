@@ -1,10 +1,10 @@
 # ha-solar-rate-switching-automation
 
-TypeScript CLI for determining the optimal time to switch electricity rate plans, using net energy production data from Home Assistant. Tested with a Sense Home Energy Monitor, but works with any HA energy sensor that tracks daily net production.
+Home Assistant custom integration for determining the optimal time to switch electricity rate plans, using net energy production data from Home Assistant. Tested with a Sense Home Energy Monitor, but works with any HA energy sensor that tracks daily net production.
 
 ## Background
 
-This tool is for a setup where:
+This integration is for a setup where:
 
 - A **Home Assistant** instance tracks daily net energy production (e.g. via a Sense Home Energy Monitor or any other energy monitor integration)
 - The electricity plan has two symmetrical rate tiers (import and export rates are always equal):
@@ -14,88 +14,86 @@ This tool is for a setup where:
 
 Because import and export rates are always equal, the break-even is simply **exports = imports**. The high rate is better whenever exports exceed imports, and vice versa.
 
-## Setup
+## Installation
 
-### 1. Install dependencies
+### 1. Add via HACS
 
-```sh
-npm install
+In HACS → Integrations → ⋮ → Custom repositories, add:
+
+```
+https://github.com/daniel-sabourin/ha-solar-rate-switching-automation
 ```
 
-### 2. Configure environment variables
+Select **Integration** as the category, then install **Rate Advisor** and restart Home Assistant.
 
-Create a `.env` file or export these in your shell:
+### 2. Configure
 
-```sh
-HA_URL=http://homeassistant.local:8123
-HA_TOKEN=your_long_lived_access_token
-HA_NET_SENSOR=sensor.daily_net_production   # adjust to your entity ID
-```
+Settings → Integrations → Add Integration → search **Rate Advisor**.
 
-The net sensor must be a HA entity with `state_class: total` that resets to 0 at midnight, increases as you export, and decreases as you import — i.e. daily net production (export − import). You can find your entity ID in Home Assistant under **Settings → Devices & Services → Entities**.
-
-The tool connects via HA's WebSocket statistics API, so `HA_URL` should be the base HTTP URL of your HA instance (the WebSocket URL is derived automatically).
-
-## Usage
-
-```sh
-npm start -- advisor --current-plan <high|low> [options]
-```
-
-### Options
-
-| Flag | Default | Description |
+| Setting | Default | Description |
 |---|---|---|
-| `--current-plan` | *(required)* | Which plan you're currently on: `high` or `low` |
-| `--days` | `30` | Trailing window in days (30 ≈ one billing cycle) |
-| `--hi-rate` | `0.35` | High plan rate in $/kWh |
-| `--lo-rate` | `0.08` | Low plan rate in $/kWh |
-| `--earliest-switch-date` | *(none)* | Earliest date you can switch rates (YYYY-MM-DD). Bounds both the window and the backdate scan — data before this date is excluded. |
+| Net production sensor | `sensor.daily_net_production` | HA entity ID for your net energy sensor |
+| High rate ($/kWh) | `0.35` | High plan rate |
+| Low rate ($/kWh) | `0.08` | Low plan rate |
+| Rolling window (days) | `30` | How many days of history to analyse |
 
-### Example
+The net sensor must have `state_class: total`, reset to 0 at midnight, increase on export, and decrease on import (daily net production = export − import).
 
-```sh
-npm start -- advisor --current-plan low --earliest-switch-date 2026-03-15
+## Sensors
+
+All sensors are grouped under a single **Rate Advisor** device.
+
+| Entity | Example | Description |
+|---|---|---|
+| `sensor.rate_advisor_recommended_plan` | `high` | Which plan is currently optimal |
+| `sensor.rate_advisor_optimal_switch_date` | `2026-04-09` | Best date to have switched from |
+| `sensor.rate_advisor_savings` | `8.96` ($) | Dollar benefit of being on the recommended plan from the optimal date |
+| `sensor.rate_advisor_energy_since_switch_date` | `+33.2` (kWh) | Net kWh since the optimal switch date (positive = net exporter, negative = net importer) |
+| `sensor.rate_advisor_window_net` | `-205.5` (kWh) | Net kWh over the full rolling window |
+| `sensor.rate_advisor_trend` | `improving` | Whether the net is moving toward the recommended plan (`improving`, `worsening`, `stable`) |
+
+Sensors update once per day at 00:05 (after midnight statistics finalise). You can also force a refresh via Settings → Integrations → Rate Advisor → ⋮ → Reload.
+
+## How the recommendation works
+
+The integration uses suffix-sum analysis on the rolling window rather than the simple window total. Even if the full 30-day net is negative (net importer overall), a positive "from here" value at the end of the window means exports have recently started winning — and the integration recommends switching to the high rate accordingly.
+
+The recommendation is determined by comparing which plan has the **most recent** optimal starting date. A later optimal date signals that plan is currently winning, which correctly handles spring/fall transitions where one plan dominates historically but the other has become better in recent days.
+
+## Push notifications
+
+Create an automation to send a push notification when the recommendation changes:
+
+```yaml
+trigger:
+  - platform: state
+    entity_id: sensor.rate_advisor_recommended_plan
+action:
+  - service: notify.mobile_app_<your_phone>
+    data:
+      title: "Rate Switch Advisor"
+      message: >
+        Recommendation: {{ states('sensor.rate_advisor_recommended_plan') | upper }}
+        from {{ states('sensor.rate_advisor_optimal_switch_date') }},
+        saves ${{ states('sensor.rate_advisor_savings') }}
 ```
 
-```
-Rate Switch Advisor
-===================
-Window: 2026-03-11 → 2026-04-09  (30 days)
-Current plan: LOW
+## Diagnostics
 
-  Net production:  -205.5 kWh (net importer)
-
-Recommendation: SWITCH to HIGH
-
-Savings from switching to HIGH (from 2026-04-09): ~$8.96
-
-Trend (first half vs second half): net  -103.8 → -101.7 kWh  ↑ (improving)
-
-Daily breakdown:
-  Date          Net     From here
-  2026-03-11   -32.7    -205.5
-  2026-03-12   -12.3    -172.8
-  ...
-  2026-04-09   +33.2     +33.2
-
-Recommendation: SWITCH to HIGH (from 2026-04-09)
-```
-
-The **Net** column is the day's net production (green = net exporter, red = net importer). The **From here** column shows the cumulative net from that day to the end of the window — this is what drives both the recommendation and the optimal switch date. Even if the full window net is negative (still a net importer overall), a positive "From here" suffix means switching now would be beneficial, and the tool recommends accordingly.
-
-When `--earliest-switch-date` is set and a switch is recommended, the output also includes an optimal backdate scanned across the full billing period:
+Call the **Rate Advisor: Diagnose** service (Developer Tools → Services) to send a persistent notification with the full daily breakdown:
 
 ```
-Optimal backdate: 2026-03-18
-  Savings vs switching today: ~$12.40
+Window: 2026-03-11 → 2026-04-09 (30 days)
+Recommended: HIGH from 2026-04-09 (~$8.96)
+Trend: improving
+Window net: -205.5 kWh
+Energy since switch date: +33.2 kWh
+
+Date          Net    From Here
+2026-03-11   -32.7    -205.5
+2026-03-12   -12.3    -172.8
+...
+2026-04-09   +33.2     +33.2
 ```
 
-## Development
-
-```sh
-npm test            # run tests once
-npm run test:watch  # watch mode
-```
-
-Tests use [vitest](https://vitest.dev/). The HA client tests mock the `WebSocket` class; the advisor logic tests are pure unit tests with no mocking needed.
+The **From Here** column shows the cumulative net from each day to the end of the window — this is what the recommendation algorithm maximises.
