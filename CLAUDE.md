@@ -85,9 +85,9 @@ npm start -- advisor [options]
 
 Options:
   --current-plan <high|low>   Which plan you're currently on (required)
-  --days <n>                  Trailing window in days (default: 14)
+  --days <n>                  Trailing window in days (default: 30)
   --hi-rate <rate>            High plan rate in $/kWh (default: 0.35)
-  --lo-rate <rate>            Low plan rate in $/kWh (default: 0.10)
+  --lo-rate <rate>            Low plan rate in $/kWh (default: 0.08)
 ```
 
 ### Output Format
@@ -95,26 +95,34 @@ Options:
 ```
 Rate Switch Advisor
 ===================
-Window: 2026-03-20 → 2026-04-03  (14 days)
+Window: 2026-03-11 → 2026-04-09  (30 days)
 Current plan: LOW
 
-  Imported:  312.4 kWh
-  Exported:  189.7 kWh
-  Net:       -122.7 kWh (net importer)
+  Net production:  -205.5 kWh (net importer)
 
-Recommendation: STAY on LOW
-  (exports must exceed imports to benefit from high rate)
+Recommendation: SWITCH to HIGH
 
-Cost of being on wrong plan: ~$30.68 over this window
-  (if you switched to HIGH, you'd pay 25c/kWh × 122.7 kWh more)
+Savings from switching to HIGH (from 2026-04-09): ~$8.96
 
-Trend (last 7d vs prior 7d): E/I ratio  0.55 → 0.66  ↑ (improving)
+Trend (first half vs second half): net  -103.8 → -101.7 kWh  ↑ (improving)
 
 Daily breakdown:
-  Date        Import   Export   Net
-  2026-03-20  24.1     12.3    -11.8
-  2026-03-21  22.8     15.4    -7.4
+  Date          Net     From here
+  2026-03-11   -32.7    -205.5
+  2026-03-12   -12.3    -172.8
   ...
+  2026-04-09   +33.2     +33.2
+
+Recommendation: SWITCH to HIGH (from 2026-04-09)
+```
+
+When STAY is recommended:
+```
+Recommendation: STAY on LOW
+  (imports must exceed exports to benefit from low rate)
+
+Cost of being on wrong plan: ~$55.49 over this window
+  (if you switched to HIGH, you'd pay 27c/kWh × 205.5 kWh more)
 ```
 
 ### Testing

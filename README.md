@@ -61,32 +61,30 @@ npm start -- advisor --current-plan low --earliest-switch-date 2026-03-15
 ```
 Rate Switch Advisor
 ===================
-Window: 2026-03-04 → 2026-04-02  (30 days)
+Window: 2026-03-11 → 2026-04-09  (30 days)
 Current plan: LOW
 
-  Net production:  -269.4 kWh (net importer)
+  Net production:  -205.5 kWh (net importer)
 
-Recommendation: STAY on LOW
-  (imports must exceed exports to benefit from low rate)
+Recommendation: SWITCH to HIGH
 
-Cost of being on wrong plan: ~$72.74 over this window
-  (if you switched to HIGH, you'd pay 27c/kWh × 269.4 kWh more)
+Savings from switching to HIGH (from 2026-04-09): ~$8.96
 
-Trend (first half vs second half): net  -126.4 → -143.0 kWh  ↓ (worsening)
+Trend (first half vs second half): net  -103.8 → -101.7 kWh  ↑ (improving)
 
 Daily breakdown:
   Date          Net     From here
-  2026-03-04   -47.7    -269.4
-  2026-03-05   +11.5    -221.7
+  2026-03-11   -32.7    -205.5
+  2026-03-12   -12.3    -172.8
   ...
-  2026-04-02   -41.0     -41.0
+  2026-04-09   +33.2     +33.2
 
-Recommendation: STAY on LOW
+Recommendation: SWITCH to HIGH (from 2026-04-09)
 ```
 
-The **Net** column is the day's net production (green = net exporter, red = net importer). The **From here** column shows the cumulative net from that day to the end of the window — this is what the backdate algorithm maximises when `--earliest-switch-date` is provided.
+The **Net** column is the day's net production (green = net exporter, red = net importer). The **From here** column shows the cumulative net from that day to the end of the window — this is what drives both the recommendation and the optimal switch date. Even if the full window net is negative (still a net importer overall), a positive "From here" suffix means switching now would be beneficial, and the tool recommends accordingly.
 
-When a switch is recommended with `--earliest-switch-date` set, the output also includes:
+When `--earliest-switch-date` is set and a switch is recommended, the output also includes an optimal backdate scanned across the full billing period:
 
 ```
 Optimal backdate: 2026-03-18
