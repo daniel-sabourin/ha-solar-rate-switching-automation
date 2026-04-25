@@ -52,13 +52,20 @@ All sensors are grouped under a single **Rate Advisor** device.
 | `sensor.rate_advisor_window_net` | `-205.5` (kWh) | Net kWh over the full rolling window |
 | `sensor.rate_advisor_trend` | `improving` | Whether the net is moving toward the recommended plan (`improving`, `worsening`, `stable`) |
 
-Sensors update once per day at 00:05 (after midnight statistics finalise). You can also force a refresh via Settings → Integrations → Rate Advisor → ⋮ → Reload.
+Sensors update once per day at 00:05 (after midnight statistics finalise). The device card also exposes two buttons:
+
+| Button | Description |
+|---|---|
+| **Refresh** | Trigger an immediate data fetch and recompute |
+| **Run Diagnostics** | Create a persistent notification with the full daily breakdown |
+
+You can also force a refresh via Settings → Integrations → Rate Advisor → ⋮ → Reload.
 
 ## How the recommendation works
 
 The integration uses suffix-sum analysis on the rolling window rather than the simple window total. Even if the full 30-day net is negative (net importer overall), a positive "from here" value at the end of the window means exports have recently started winning — and the integration recommends switching to the high rate accordingly.
 
-The recommendation is determined by comparing which plan has the **most recent** optimal starting date. A later optimal date signals that plan is currently winning, which correctly handles spring/fall transitions where one plan dominates historically but the other has become better in recent days.
+The recommendation is determined by comparing the **cumulative kWh signal** of each plan from its optimal starting date. Whichever plan has accumulated the stronger net energy advantage (in its favoured direction) wins. This prevents a single bad solar day from overriding a sustained trend in the opposite direction.
 
 ## Push notifications
 
@@ -80,7 +87,7 @@ action:
 
 ## Diagnostics
 
-Call the **Rate Advisor: Diagnose** service (Developer Tools → Services) to send a persistent notification with the full daily breakdown:
+Press the **Run Diagnostics** button on the Rate Advisor device card, or call the **Rate Advisor: Diagnose** service from Developer Tools → Services. Either way, a persistent notification appears with the full daily breakdown:
 
 ```
 Window: 2026-03-11 → 2026-04-09 (30 days)
