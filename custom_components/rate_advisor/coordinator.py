@@ -70,9 +70,9 @@ def _compute_result(
     optimal_date_high, savings_high, raw_high = _find_optimal_backdate(window, "high", rate_diff)
     optimal_date_low, savings_low, raw_low = _find_optimal_backdate(window, "low", rate_diff)
 
-    # Pick the plan whose optimal starting date is most recent — a later optimal date
-    # means that plan is currently winning. This correctly handles windows where one plan
-    # dominates historically but the other has become better in recent days.
+    # Pick the plan with the stronger cumulative kWh signal from its optimal date.
+    # Comparing raw kWh (rather than dates) prevents a single bad day from overriding
+    # a sustained trend in the opposite direction.
     if optimal_date_high is None and optimal_date_low is None:
         recommended_plan = "low"
         optimal_date = None
@@ -88,7 +88,7 @@ def _compute_result(
         optimal_date = optimal_date_high
         savings = savings_high
         energy_since_switch = raw_high   # positive: net exporter over this period
-    elif optimal_date_high >= optimal_date_low:
+    elif raw_high >= raw_low:
         recommended_plan = "high"
         optimal_date = optimal_date_high
         savings = savings_high
